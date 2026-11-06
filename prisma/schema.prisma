@@ -7,9 +7,156 @@ datasource db {
   provider = "postgresql"
 }
 
+// Resmi = toko brand resmi, Ori = penjual terverifikasi menjual barang asli
+enum StoreType {
+  OFFICIAL
+  ORIGINAL
+  REGULAR
+}
+
+enum SizeType {
+  NONE // varian biasa, misalnya warna
+  SHOE // nomor sepatu
+  CLOTHING // S, M, L, XL
+}
+
+enum VoucherType {
+  PERCENT
+  FIXED
+}
+
+// slug sama dengan tautan menu di header (fashion, elektronik, rumah, ...)
+model Category {
+  id       Int       @id @default(autoincrement())
+  slug     String    @unique
+  name     String
+  products Product[]
+}
+
+model Seller {
+  id       Int       @id @default(autoincrement())
+  name     String
+  city     String
+  type     StoreType @default(REGULAR)
+  products Product[]
+}
+
+model Voucher {
+  id          Int         @id @default(autoincrement())
+  code        String      @unique
+  type        VoucherType
+  value       Int // PERCENT: 10 = 10%, FIXED: nominal rupiah
+  maxDiscount Int? // batas potongan untuk tipe PERCENT
+  minSpend    Int         @default(0)
+  startsAt    DateTime
+  endsAt      DateTime
+  products    Product[]
+}
+
 model Product {
-  id    Int    @id @default(autoincrement())
-  name  String
-  price Int
-  stock Int
+  id            Int      @id @default(autoincrement())
+  name          String
+  price         Int // harga jual saat ini (rupiah)
+  originalPrice Int? // harga coret; kosong = tidak ada diskon
+  stock         Int
+  thumbnailUrl  String?  @map("imageUrl") // foto kecil untuk kartu dan daftar
+  description   String?
+  sizeType      SizeType @default(NONE)
+
+  // Ringkasan ulasan dan penjualan. Diperbarui saat ada ulasan atau pesanan baru.
+  rating      Float @default(0)
+  ratingCount Int   @default(0)
+  soldCount   Int   @default(0)
+
+  // Pengiriman
+  freeShipping Boolean @default(false)
+  instant      Boolean @default(false)
+  etaMinDays   Int     @default(2)
+  etaMaxDays   Int     @default(4)
+
+  // Opsional supaya data lama tetap bisa dimigrasi
+  sellerId Int?
+  seller   Seller? @relation(fields: [sellerId], references: [id])
+
+  images   ProductImage[]
+  variants ProductVariant[]
+  specs    ProductSpec[]
+  reviews  Review[]
+
+  sizeGuideId Int?
+  sizeGuide   SizeGuide? @relation(fields: [sizeGuideId], references: [id])
+
+  // Opsional supaya data lama tetap bisa dimigrasi
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  vouchers  Voucher[]
+  createdAt DateTime  @default(now())
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([sizeGuideId])
+}
+
+// Galeri foto produk. Urutan tampil mengikuti position.
+model ProductImage {
+  id        Int     @id @default(autoincrement())
+  url       String
+  alt       String?
+  position  Int     @default(0)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// Satu baris = satu pilihan, misalnya "42" atau "XL". Stok dihitung per pilihan.
+model ProductVariant {
+  id        Int     @id @default(autoincrement())
+  label     String
+  stock     Int     @default(0)
+  price     Int? // kosong = pakai harga produk
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, label])
+}
+
+// Spesifikasi: Bahan, Merek, Berat, dan seterusnya
+model ProductSpec {
+  id        Int     @id @default(autoincrement())
+  label     String
+  value     String
+  position  Int     @default(0)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// Panduan ukuran, bisa dipakai bersama oleh banyak produk (satu merek)
+// rows: [{ "size": "M", "values": ["96", "68"] }]
+model SizeGuide {
+  id       Int       @id @default(autoincrement())
+  title    String
+  note     String?
+  columns  String[] // contoh: ["Lingkar dada (cm)", "Panjang (cm)"]
+  rows     Json
+  products Product[]
+}
+
+model Review {
+  id           Int      @id @default(autoincrement())
+  userName     String
+  rating       Int // 1 sampai 5
+  comment      String?
+  variantLabel String? // pilihan yang dibeli, misalnya "42"
+  photos       String[]
+  helpfulCount Int      @default(0)
+  sellerReply  String?
+  createdAt    DateTime @default(now())
+  productId    Int
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, rating])
 }
